@@ -20,6 +20,7 @@ import emu.grasscutter.net.proto.VisionTypeOuterClass.VisionType;
 import emu.grasscutter.scripts.SceneIndexManager;
 import emu.grasscutter.scripts.SceneScriptManager;
 import emu.grasscutter.scripts.data.SceneBlock;
+import emu.grasscutter.scripts.data.SceneGadget;
 import emu.grasscutter.scripts.data.SceneGroup;
 import emu.grasscutter.server.packet.send.*;
 import emu.grasscutter.utils.Position;
@@ -530,13 +531,14 @@ public class Scene {
 	public List<SceneGroup> playerMeetGroups(Player player, SceneBlock block){
 		int RANGE = 100;
 
-		var sceneGroups = SceneIndexManager.queryNeighbors(block.sceneGroupIndex, player.getPos(), RANGE);
+		List<SceneGroup> sceneGroups = SceneIndexManager.queryNeighbors(block.sceneGroupIndex, player.getPos(), RANGE);
 
-		var groups = new ArrayList<>(sceneGroups.stream()
+		List<SceneGroup> groups = sceneGroups.stream()
 				.filter(group -> !scriptManager.getLoadedGroupSetPerBlock().get(block.id).contains(group))
-				.peek(group -> scriptManager.getLoadedGroupSetPerBlock().get(block.id).add(group)).toList());
+				.peek(group -> scriptManager.getLoadedGroupSetPerBlock().get(block.id).add(group))
+				.toList();
 
-		if(groups.size() == 0){
+		if (groups.size() == 0) {
 			return List.of();
 		}
 
@@ -573,7 +575,15 @@ public class Scene {
 			if (group.init_config == null) {
 				continue;
 			}
+			
+			// Load garbages
+			List<SceneGadget> garbageGadgets = group.getGarbageGadgets();
+			
+			if (garbageGadgets != null) {
+				garbageGadgets.forEach(g -> scriptManager.createGadget(group.id, group.block_id, g));
+			}
 
+			// Load suites
 			int suite = group.init_config.suite;
 
 			if (suite == 0) {
@@ -696,10 +706,5 @@ public class Scene {
 			EntityItem entity = new EntityItem(this, null, itemData, bornForm.getPosition().clone().addZ(.9f), amount);
 			addEntity(entity);
 		}
-	}
-
-	public void updateGadgetState(EntityGadget gadget, int state){
-		gadget.setState(state);
-		broadcastPacket(new PacketGadgetStateNotify(gadget, state));
 	}
 }

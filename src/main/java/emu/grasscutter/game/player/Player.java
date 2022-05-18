@@ -918,29 +918,20 @@ public class Player {
 				else
 					this.getScene().broadcastPacket(new PacketGadgetInteractRsp(drop, InteractType.INTERACT_PICK_ITEM));
 			}
-		} else if (entity instanceof EntityGadget) {
-			EntityGadget gadget = (EntityGadget) entity;
-			
-			if (gadget.getGadgetData().getType() == EntityType.RewardStatue) {
-				if (scene.getChallenge() != null) {
-					scene.getChallenge().getStatueDrops(this);
-				}
-				
-				this.sendPacket(new PacketGadgetInteractRsp(gadget, InteractType.INTERACT_OPEN_STATUE));
+		} else if (entity instanceof EntityGadget gadget) {
+			if (gadget.getContent() == null) {
+				return;
 			}
-			else if (gadget.getGadgetData().getType() == EntityType.Chest) {
-				getScene().updateGadgetState(gadget, ScriptGadgetState.ChestOpened);
-				gadget.openChest(this);
-
-				this.sendPacket(new PacketGadgetInteractRsp(gadget, InteractType.INTERACT_OPEN_CHEST));
-				getScene().killEntity(gadget, 0);
+			
+			boolean shouldDelete = gadget.getContent().onInteract(this);
+			
+			if (shouldDelete) {
+				entity.getScene().removeEntity(entity);
 			}
 		} else {
 			// Delete directly
 			entity.getScene().removeEntity(entity);
 		}
-
-		return;
 	}
 
 	public void onPause() {

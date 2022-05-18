@@ -3,9 +3,15 @@ package emu.grasscutter.game.entity;
 import emu.grasscutter.Grasscutter;
 import emu.grasscutter.data.GameData;
 import emu.grasscutter.data.def.GadgetData;
+import emu.grasscutter.game.entity.gadget.GadgetChest;
+import emu.grasscutter.game.entity.gadget.GadgetContent;
+import emu.grasscutter.game.entity.gadget.GadgetGatherPoint;
+import emu.grasscutter.game.entity.gadget.GadgetRewardStatue;
+import emu.grasscutter.game.entity.gadget.GadgetWorktop;
 import emu.grasscutter.game.player.Player;
 import emu.grasscutter.game.props.EntityIdType;
 import emu.grasscutter.game.props.EntityType;
+import emu.grasscutter.game.props.FightProperty;
 import emu.grasscutter.game.props.PlayerProperty;
 import emu.grasscutter.game.world.Scene;
 import emu.grasscutter.net.proto.AbilitySyncStateInfoOuterClass.AbilitySyncStateInfo;
@@ -22,6 +28,7 @@ import emu.grasscutter.net.proto.SceneEntityInfoOuterClass.SceneEntityInfo;
 import emu.grasscutter.net.proto.SceneGadgetInfoOuterClass.SceneGadgetInfo;
 import emu.grasscutter.net.proto.VectorOuterClass.Vector;
 import emu.grasscutter.net.proto.WorktopInfoOuterClass.WorktopInfo;
+import emu.grasscutter.server.packet.send.PacketGadgetStateNotify;
 import emu.grasscutter.utils.Position;
 import emu.grasscutter.utils.ProtoHelper;
 import it.unimi.dsi.fastutil.ints.Int2FloatOpenHashMap;
@@ -40,7 +47,8 @@ public class EntityGadget extends EntityBaseGadget {
 	private int gadgetId;
 	
 	private int state;
-	private IntSet worktopOptions;
+	private int pointType;
+	private GadgetContent content;
 
 	public EntityGadget(Scene scene, int gadgetId, Position pos) {
 		super(scene);
@@ -51,19 +59,22 @@ public class EntityGadget extends EntityBaseGadget {
 		this.rot = new Position();
 	}
 	
+	public EntityGadget(Scene scene, int gadgetId, Position pos, GadgetContent content) {
+		this(scene, gadgetId, pos);
+		this.content = content;
+	}
+	
 	public GadgetData getGadgetData() {
 		return data;
 	}
 
 	@Override
 	public Position getPosition() {
-		// TODO Auto-generated method stub
 		return this.pos;
 	}
 
 	@Override
 	public Position getRotation() {
-		// TODO Auto-generated method stub
 		return this.rot;
 	}
 	
@@ -82,28 +93,49 @@ public class EntityGadget extends EntityBaseGadget {
 	public void setState(int state) {
 		this.state = state;
 	}
+	
+	public void updateState(int state){
+		this.setState(state);
+		this.getScene().broadcastPacket(new PacketGadgetStateNotify(this, state));
+	}
 
-	public IntSet getWorktopOptions() {
-		return worktopOptions;
+	public int getPointType() {
+		return pointType;
+	}
+
+	public void setPointType(int pointType) {
+		this.pointType = pointType;
+	}
+
+	public GadgetContent getContent() {
+		return content;
+	}
+
+	@Deprecated // Dont use!
+	public void setContent(GadgetContent content) {
+		this.content = this.content == null ? content : this.content;
 	}
 	
-	public void addWorktopOptions(int[] options) {
-		if (this.worktopOptions == null) {
-			this.worktopOptions = new IntOpenHashSet();
-		}
-		Arrays.stream(options).forEach(this.worktopOptions::add);
-	}
-	
-	public void removeWorktopOption(int option) {
-		if (this.worktopOptions == null) {
+	// TODO refactor
+	public void buildContent() {
+		if (getContent() != null || getGadgetData() == null || getGadgetData().getType() == null) {
 			return;
 		}
-		this.worktopOptions.remove(option);
+		
+		EntityType type = getGadgetData().getType();
+		GadgetContent content = switch (type) {
+			case GatherPoint -> new GadgetGatherPoint(this);
+			case Worktop -> new GadgetWorktop(this);
+			case RewardStatue -> new GadgetRewardStatue(this);
+			case Chest -> new GadgetChest(this);
+			default -> null;
+		};
+		
+		this.content = content;
 	}
 
 	@Override
 	public Int2FloatOpenHashMap getFightProperties() {
-		// TODO Auto-generated method stub
 		return null;
 	}
 
@@ -144,41 +176,12 @@ public class EntityGadget extends EntityBaseGadget {
 				.setIsEnableInteract(true)
 				.setAuthorityPeerId(this.getScene().getWorld().getHostPeerId());
 		
-		if (this.getGadgetData().getType() == EntityType.Worktop && this.getWorktopOptions() != null) {
-			WorktopInfo worktop = WorktopInfo.newBuilder()
-					.addAllOptionList(this.getWorktopOptions())
-					.build();
-			gadgetInfo.setWorktop(worktop);
+		if (this.getContent() != null) {
+			this.getContent().onBuildProto(gadgetInfo);
 		}
 
 		entityInfo.setGadget(gadgetInfo);
 		
 		return entityInfo.build();
 	}
-
-    public void openChest(Player player) {
-		var chestRewardMap = getScene().getWorld().getServer().getWorldDataManager().getChestRewardMap();
-		var chestReward = chestRewardMap.get(this.getGadgetData().getJsonName());
-		if(chestReward == null){
-			Grasscutter.getLogger().warn("Could not found the config of this type of Chests {}", this.getGadgetData().getJsonName());
-			return;
-		}
-
-		player.earnExp(chestReward.getAdvExp());
-		player.getInventory().addItem(201, chestReward.getResin());
-
-		var mora = chestReward.getMora() * (1 + (player.getWorldLevel() - 1) * 0.5);
-		player.getInventory().addItem(202, (int)mora);
-
-		for(int i=0;i<chestReward.getContent().size();i++){
-			getScene().addItemEntity(chestReward.getContent().get(i).getItemId(), chestReward.getContent().get(i).getCount(), this);
-		}
-
-		var random = new Random(System.currentTimeMillis());
-		for(int i=0;i<chestReward.getRandomCount();i++){
-			var index = random.nextInt(chestReward.getRandomContent().size());
-			var item = chestReward.getRandomContent().get(index);
-			getScene().addItemEntity(item.getItemId(), item.getCount(), this);
-		}
-    }
 }

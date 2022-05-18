@@ -135,6 +135,8 @@ public class ConfigContainer {
         public int bindPort = 22102;
         /* This is the port used in the default region. */
         public int accessPort = 0;
+        
+        public boolean enableScriptInBigWorld = false;
         public boolean enableConsole = true;
         public GameOptions gameOptions = new GameOptions();
         public JoinOptions joinOptions = new JoinOptions();
